@@ -1,0 +1,79 @@
+Topic for Contest
+Smarter db syncing: Any O/R tool has to do db syncing, the syncing has to be done in a batched fashion. For batch operations however running sqls based on dirty object detection can be sub optimal, a more optimal solution could be a possible submission.
+Working team:
+o	Radhika(Radhikap@pramati.com) 
+o	Santhosh(Santhoshg@pramati.com) 
+o	Sreenivas(Sreenivass@pramati.com)
+Our work:
+Optimizing Event updates:-
+Similar kinds of event updates are executed in Hibernate through sql batch. The more optimal solution to the batched sql approach of hibernates is to combine similar kind of event update actions to be executed with single query (using in clause) which avoids unnecessary logging and shows comparatively better performance. 
+Action Queue class in Hibernate is a queue of actions related to events.  We started our work from this class to find out the similar kinds of event updates.  
+From all the update events in the Action Queue, Similar update actions are found as follows,
+•	Update entities should be of same Entity (on same Table).
+•	dirty fields count should be equal
+•	dirty fields column indexes should be equal
+•	dirty fields values to update, should be equal
+•	version should be of same, incase versioning is enabled
+With all these constraints over the update actions collection in ActionQueue class, we started collecting the similar kind of entity update actions together into a new collection, and then removed the entries from update actions in ActionQueue class, to fire one single update query over this collection.
+If we are trying to update the similar kind of update actions through one single query, things that we need to take care of are 
+•	Any pre and post update event listeners configured.
+•	Any pre and post flush event listeners configured.
+•	Updating the entity snap shot in the persister and 
+•	Updating the cache incase if caching is enabled. (using softLocks)
+We wrote a new class EntitiesUpdateAction - for executing the similar updates collection with single query. This class will do the following
+•	Pre Update listeners are invoked on all the entities in similar updates collection.
+•	IN clause is constructed based on the primary key type (composit key is taken care of).
+•	Update query is constructed. We try to get the sql prepared Statement from the existing query construction logic in AbstractEntityPersister.
+•	As we are getting the prepared statement, we need not construct a HQL. So there is no problem of recursive logic.
+•	Values into the prepared statement are set using the nullSafeSet method of respective column type. (logic is taken from deHydrate method of AbstractEntityPersistor)
+•	Next version value is set from the State object (this holds the updated state) attached with each EntitypUpdateAction.
+•	Executing the update query *******
+•	Snap shot is updated in the persister
+•	Post update listeners, 
+•	Updating the entity in the cache ( using softLocks ) - if caching is enabled for this entity
+•	Post commit update method .. ???   ( Yet to handle )
+•	AfterTransactionCompletion...??? ( Yet to handle )
+
+Hibernate Source Version: Hibernate 3.2.2 ga.
+Details of the class files Added / modified:
+•	org.hibernate.engine.ActionQueue
+o	Modified methods are
+o	public void executeActions() throws HibernateException
+o	New methods added are
+o	private void optimizeCollectionUpdates();
+o	private void executeWithOneUpdateQuery(ArrayList similarUpdates)
+•	org.hibernate.action.EntityUpdateAction
+o	New methods added are
+o	public boolean compareWithUpdateAction(EntityUpdateAction entityUpdateAction);   (this method added to compare two EntityUpdateActions are equal are not.)	 
+o	list of getter methods added to get access to the private variables of the class.
+o	public final Object getPreviousVersion();
+o	public Object[] getState();
+o	public Object getNextVersion();
+o	public void setNextVersion(Object nextVersion);
+o	public Object[] getPreviousState();
+o	public int[] getDirtyFields();
+o	public boolean isHasDirtyCollection();
+o	public final Object getInstanceFromEntityAction();
+o	public final Object getIdFromEntityAction();
+o	public Object getRowId();
+o	public final EntityPersister getPersisterFromEntityAction();
+
+•	org.hibernate.action.EntitiesUpdateAction  ( Is a new class added for executing the similar kind of update actions together in one query.)
+•	 org.hibernate.persister.entity.EntityPersister
+o	New method signature added
+o	public String[] returnUpdateQuery(...) throws HibernateException;
+
+•	org.hibernate.persister.entity.AbstractEntityPersister
+o	New method added ( implementation for the above interface method )
+o	public String[] returnUpdateQuery(..) throws HibernateException;
+
+
+Optimizing Event deletes:-
+Approach as discussed in the blog:
+http://blog.pramatiservices.com/bulk-delete-problem-with-hibernate/
+
+
+ISSUES:
+
+Expected updated record count should match to the IN clause values list. Otherwise throw stale data exception
+Sorting the update collection, based on the version is also required.  
