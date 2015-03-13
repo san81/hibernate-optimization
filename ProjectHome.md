@@ -1,0 +1,1 @@
+Smarter db syncing: Any O/R tool has to do db syncing, the syncing has to be done in a batched fashion. For batch operations however running sqls based on dirty object detection can be sub optimal, a more optimal solution could be a possible submission.
